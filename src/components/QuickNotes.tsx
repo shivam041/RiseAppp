@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { authAPI } from '../services/api';
 import { QuickNote } from '../types';
 
@@ -12,18 +12,18 @@ const QuickNotes: React.FC<QuickNotesProps> = ({ selectedDate }) => {
   const [newNoteContent, setNewNoteContent] = useState('');
   const [showAddForm, setShowAddForm] = useState(false);
 
-  useEffect(() => {
-    loadNotes();
-  }, [selectedDate]);
-
-  const loadNotes = async () => {
+  const loadNotes = useCallback(async () => {
     try {
       const data = await authAPI.getQuickNotes(selectedDate);
       setNotes(data);
     } catch (error) {
       console.error('Error loading notes:', error);
     }
-  };
+  }, [selectedDate]);
+
+  useEffect(() => {
+    loadNotes();
+  }, [loadNotes]);
 
   const handleAddNote = async (e: React.FormEvent) => {
     e.preventDefault();

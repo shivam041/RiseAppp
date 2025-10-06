@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { authAPI } from '../services/api';
 import { DailyGoal } from '../types';
 
@@ -14,18 +14,18 @@ const DailyGoals: React.FC<DailyGoalsProps> = ({ selectedDate }) => {
   const [newGoalPriority, setNewGoalPriority] = useState<'low' | 'medium' | 'high' | 'urgent'>('medium');
   const [showAddForm, setShowAddForm] = useState(false);
 
-  useEffect(() => {
-    loadGoals();
-  }, [selectedDate]);
-
-  const loadGoals = async () => {
+  const loadGoals = useCallback(async () => {
     try {
       const data = await authAPI.getDailyGoals(selectedDate);
       setGoals(data);
     } catch (error) {
       console.error('Error loading goals:', error);
     }
-  };
+  }, [selectedDate]);
+
+  useEffect(() => {
+    loadGoals();
+  }, [loadGoals]);
 
   const handleAddGoal = async (e: React.FormEvent) => {
     e.preventDefault();

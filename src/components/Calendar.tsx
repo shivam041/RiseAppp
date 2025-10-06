@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { authAPI } from '../services/api';
 import { CalendarData } from '../types';
 
@@ -12,11 +12,7 @@ const Calendar: React.FC<CalendarProps> = ({ onDateSelect, selectedDate }) => {
   const [calendarData, setCalendarData] = useState<CalendarData>({});
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    loadCalendarData();
-  }, [currentDate]);
-
-  const loadCalendarData = async () => {
+  const loadCalendarData = useCallback(async () => {
     setLoading(true);
     try {
       const data = await authAPI.getCalendarData(
@@ -29,7 +25,11 @@ const Calendar: React.FC<CalendarProps> = ({ onDateSelect, selectedDate }) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [currentDate]);
+
+  useEffect(() => {
+    loadCalendarData();
+  }, [loadCalendarData]);
 
   const getDaysInMonth = (date: Date) => {
     const year = date.getFullYear();

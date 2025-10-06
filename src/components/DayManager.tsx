@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { authAPI } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -11,17 +11,7 @@ const DayManager: React.FC<DayManagerProps> = ({ onDayUpdate }) => {
   const [lastCheckedDate, setLastCheckedDate] = useState<string>('');
   const [isChecking, setIsChecking] = useState(false);
 
-  useEffect(() => {
-    // Check for new day on component mount
-    checkForNewDay();
-    
-    // Set up interval to check every minute
-    const interval = setInterval(checkForNewDay, 60000); // Check every minute
-    
-    return () => clearInterval(interval);
-  }, []);
-
-  const checkForNewDay = async () => {
+  const checkForNewDay = useCallback(async () => {
     const today = new Date().toDateString();
     
     // Only check if we haven't checked today yet
@@ -45,7 +35,17 @@ const DayManager: React.FC<DayManagerProps> = ({ onDayUpdate }) => {
     } finally {
       setIsChecking(false);
     }
-  };
+  }, [lastCheckedDate, onDayUpdate]);
+
+  useEffect(() => {
+    // Check for new day on component mount
+    checkForNewDay();
+    
+    // Set up interval to check every minute
+    const interval = setInterval(checkForNewDay, 60000); // Check every minute
+    
+    return () => clearInterval(interval);
+  }, [checkForNewDay]);
 
   const showNewDayNotification = (message: string) => {
     // Create a simple notification
