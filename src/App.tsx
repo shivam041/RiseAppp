@@ -1,6 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import './App.css';
-import HabitSetup, { HabitConfig } from './components/HabitSetup';
+import HabitSetup from './components/HabitSetup';
 import SimpleTracker from './components/SimpleTracker';
 import StreakCalendar from './components/StreakCalendar';
 import ReminderManager from './components/ReminderManager';

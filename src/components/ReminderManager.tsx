@@ -33,18 +33,20 @@ const ReminderManager: React.FC<ReminderManagerProps> = ({ reminders }) => {
 
     const scheduleAll = async () => {
       const ok = await ensurePermission();
-      for (const r of reminders) {
+      const makeFire = (title: string, time: string) => {
         const fire = () => {
           if (!cancelled && ok && 'Notification' in window) {
             try {
-              new Notification('Rise Reminder', {
-                body: r.title,
-              });
+              new Notification('Rise Reminder', { body: title });
             } catch {}
           }
-          const t = scheduleNextTimeout(r.time, fire);
+          const t = scheduleNextTimeout(time, fire);
           timers.push(t);
         };
+        return fire;
+      };
+      for (const r of reminders) {
+        const fire = makeFire(r.title, r.time);
         const t = scheduleNextTimeout(r.time, fire);
         timers.push(t);
       }
