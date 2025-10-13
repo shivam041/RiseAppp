@@ -64,39 +64,39 @@ const SimpleTracker: React.FC<SimpleTrackerProps> = ({ startDate, completedDates
   };
 
   return (
-    <div className="bg-white rounded-lg shadow-md p-6">
+    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-xl font-semibold text-gray-900">Day {dayOf66} of 66</h3>
-          <p className="text-gray-600">Don’t break the chain.</p>
+          <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Day {dayOf66} of 66</h3>
+          <p className="text-gray-600 dark:text-gray-400">Don't break the chain.</p>
         </div>
         <button
           onClick={handleCheckIn}
           disabled={isTodayCompleted}
-          className={`px-4 py-2 rounded-lg font-medium transition-colors ${isTodayCompleted ? 'bg-gray-300 text-gray-600 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700 text-white'}`}
+          className={`px-4 py-2 rounded-lg font-medium transition-colors ${isTodayCompleted ? 'bg-gray-300 dark:bg-gray-600 text-gray-600 dark:text-gray-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700 text-white'}`}
         >
           {isTodayCompleted ? 'Completed Today' : '✅ Completed Today'}
         </button>
       </div>
 
       <div className="mt-6 grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-gray-50 p-4 rounded-lg">
-          <div className="text-3xl font-bold text-indigo-600">{totalCompleted}</div>
-          <div className="text-gray-600">Total Days Completed</div>
+        <div className="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
+          <div className="text-3xl font-bold text-indigo-600 dark:text-indigo-400">{totalCompleted}</div>
+          <div className="text-gray-600 dark:text-gray-400">Total Days Completed</div>
         </div>
-        <div className="bg-gray-50 p-4 rounded-lg">
-          <div className="text-3xl font-bold text-green-600">{longestStreak}</div>
-          <div className="text-gray-600">Longest Streak</div>
+        <div className="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
+          <div className="text-3xl font-bold text-green-600 dark:text-green-400">{longestStreak}</div>
+          <div className="text-gray-600 dark:text-gray-400">Longest Streak</div>
         </div>
-        <div className="bg-gray-50 p-4 rounded-lg">
-          <div className="text-3xl font-bold text-orange-600">{66 - dayOf66}</div>
-          <div className="text-gray-600">Days Remaining</div>
+        <div className="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
+          <div className="text-3xl font-bold text-orange-600 dark:text-orange-400">{66 - dayOf66}</div>
+          <div className="text-gray-600 dark:text-gray-400">Days Remaining</div>
         </div>
       </div>
 
       {dayOf66 === 66 && (
-        <div className="mt-4 p-4 bg-green-50 text-green-800 rounded-lg border border-green-200">
-          🎉 Congratulations! You’ve completed 66 days!
+        <div className="mt-4 p-4 bg-green-50 dark:bg-green-900/20 text-green-800 dark:text-green-300 rounded-lg border border-green-200 dark:border-green-800">
+          🎉 Congratulations! You've completed 66 days!
         </div>
       )}
     </div>

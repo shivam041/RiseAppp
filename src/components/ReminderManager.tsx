@@ -22,12 +22,21 @@ const ReminderManager: React.FC<ReminderManagerProps> = ({ reminders }) => {
     const timers: number[] = [];
 
     const ensurePermission = async () => {
-      if (!('Notification' in window)) return false;
+      if (!('Notification' in window)) {
+        console.log('This browser does not support notifications');
+        return false;
+      }
       if (Notification.permission === 'granted') return true;
       if (Notification.permission !== 'denied') {
         const res = await Notification.requestPermission();
+        if (res === 'granted') {
+          console.log('Notification permission granted');
+        } else {
+          console.log('Notification permission denied');
+        }
         return res === 'granted';
       }
+      console.log('Notification permission was previously denied');
       return false;
     };
 
@@ -37,8 +46,16 @@ const ReminderManager: React.FC<ReminderManagerProps> = ({ reminders }) => {
         const fire = () => {
           if (!cancelled && ok && 'Notification' in window) {
             try {
-              new Notification('Rise Reminder', { body: title });
-            } catch {}
+              new Notification('Rise Reminder', { 
+                body: title,
+                icon: '/favicon.ico',
+                badge: '/favicon.ico',
+                tag: 'rise-habit-reminder',
+                requireInteraction: false
+              });
+            } catch (error) {
+              console.error('Failed to create notification:', error);
+            }
           }
           const t = scheduleNextTimeout(time, fire);
           timers.push(t);
