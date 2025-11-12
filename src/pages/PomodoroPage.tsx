@@ -48,15 +48,33 @@ const PomodoroPage: React.FC = () => {
   const handleTimerCompleteFromStateRef = useRef<(mode: TimerMode) => void>();
   const timeRemainingRef = useRef<number>(DEFAULT_WORK_MINUTES * 60);
 
-  const clearTimerState = useCallback(() => {
+  const clearTimerState = useCallback(async () => {
     localStorage.removeItem(TIMER_STATE_KEY);
     timerEndTimestampRef.current = null;
+    
+    // Also clear from IndexedDB
+    if ('indexedDB' in window) {
+      try {
+        const db = await openPomodoroDB();
+        const transaction = db.transaction(['pomodoro-timer'], 'readwrite');
+        const store = transaction.objectStore('pomodoro-timer');
+        
+        await new Promise<void>((resolve, reject) => {
+          const request = store.delete('current');
+          request.onsuccess = () => resolve();
+          request.onerror = () => reject(request.error);
+        });
+      } catch (error) {
+        console.error('Error clearing Pomodoro timer from IndexedDB:', error);
+      }
+    }
+    
     if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
       navigator.serviceWorker.controller.postMessage({
         type: 'POMODORO_TIMER_CLEAR',
       });
     }
-  }, []);
+  }, [openPomodoroDB]);
 
   // Keep ref updated
   useEffect(() => {
@@ -102,8 +120,8 @@ const PomodoroPage: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Save timer state to localStorage
-  const saveTimerState = useCallback(() => {
+  // Save timer state to localStorage and IndexedDB
+  const saveTimerState = useCallback(async () => {
     const state: TimerState = {
       mode,
       timerEndTimestamp: timerEndTimestampRef.current,
@@ -111,6 +129,29 @@ const PomodoroPage: React.FC = () => {
       pausedTimeRemaining: isPaused ? timeRemaining : null,
     };
     localStorage.setItem(TIMER_STATE_KEY, JSON.stringify(state));
+    
+    // Also save to IndexedDB for service worker access
+    if ('indexedDB' in window) {
+      try {
+        const db = await openPomodoroDB();
+        const transaction = db.transaction(['pomodoro-timer'], 'readwrite');
+        const store = transaction.objectStore('pomodoro-timer');
+        
+        const timerData = {
+          id: 'current',
+          ...state,
+          settings,
+        };
+        
+        await new Promise<void>((resolve, reject) => {
+          const request = store.put(timerData);
+          request.onsuccess = () => resolve();
+          request.onerror = () => reject(request.error);
+        });
+      } catch (error) {
+        console.error('Error saving Pomodoro timer to IndexedDB:', error);
+      }
+    }
     
     // Also sync to service worker for background notifications
     if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
@@ -122,7 +163,24 @@ const PomodoroPage: React.FC = () => {
         },
       });
     }
-  }, [mode, isPaused, timeRemaining, settings]);
+  }, [mode, isPaused, timeRemaining, settings, openPomodoroDB]);
+
+  // Open IndexedDB for Pomodoro timer
+  const openPomodoroDB = useCallback((): Promise<IDBDatabase> => {
+    return new Promise((resolve, reject) => {
+      const request = indexedDB.open('rise-app-db', 2);
+      
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve(request.result);
+      
+      request.onupgradeneeded = (event) => {
+        const db = (event.target as IDBOpenDBRequest).result;
+        if (!db.objectStoreNames.contains('pomodoro-timer')) {
+          db.createObjectStore('pomodoro-timer', { keyPath: 'id' });
+        }
+      };
+    });
+  }, []);
 
   // Request notification permission
   useEffect(() => {

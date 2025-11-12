@@ -10,7 +10,18 @@ self.addEventListener('install', (event) => {
 // Activate service worker
 self.addEventListener('activate', (event) => {
   console.log('Service Worker activating...');
-  event.waitUntil(self.clients.claim());
+  event.waitUntil(
+    Promise.all([
+      self.clients.claim(),
+      // Load and check Pomodoro timer on activation
+      loadPomodoroTimerFromDB().then((state) => {
+        if (state && !state.isPaused && state.timerEndTimestamp) {
+          // Start checking if timer is active
+          startPomodoroTimerCheck();
+        }
+      })
+    ])
+  );
 });
 
 // Handle notification clicks
@@ -69,7 +80,7 @@ async function getHabitsAndSendNotifications(currentDay) {
 // Open IndexedDB
 function openDB() {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open('rise-app-db', 1);
+    const request = indexedDB.open('rise-app-db', 2);
     
     request.onerror = () => reject(request.error);
     request.onsuccess = () => resolve(request.result);
@@ -78,6 +89,9 @@ function openDB() {
       const db = event.target.result;
       if (!db.objectStoreNames.contains('habits')) {
         db.createObjectStore('habits', { keyPath: 'id' });
+      }
+      if (!db.objectStoreNames.contains('pomodoro-timer')) {
+        db.createObjectStore('pomodoro-timer', { keyPath: 'id' });
       }
     };
   });
@@ -100,19 +114,77 @@ function getHabitsFromDB(db) {
 }
 
 // Pomodoro timer state
-let pomodoroTimerState = null;
 let pomodoroCheckInterval = null;
+
+// Save Pomodoro timer state to IndexedDB
+async function savePomodoroTimerToDB(state) {
+  try {
+    const db = await openDB();
+    const transaction = db.transaction(['pomodoro-timer'], 'readwrite');
+    const store = transaction.objectStore('pomodoro-timer');
+    
+    const timerData = {
+      id: 'current',
+      ...state,
+    };
+    
+    await new Promise((resolve, reject) => {
+      const request = store.put(timerData);
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+  } catch (error) {
+    console.error('Error saving Pomodoro timer to DB:', error);
+  }
+}
+
+// Load Pomodoro timer state from IndexedDB
+async function loadPomodoroTimerFromDB() {
+  try {
+    const db = await openDB();
+    const transaction = db.transaction(['pomodoro-timer'], 'readonly');
+    const store = transaction.objectStore('pomodoro-timer');
+    
+    return new Promise((resolve, reject) => {
+      const request = store.get('current');
+      request.onsuccess = () => resolve(request.result || null);
+      request.onerror = () => reject(request.error);
+    });
+  } catch (error) {
+    console.error('Error loading Pomodoro timer from DB:', error);
+    return null;
+  }
+}
+
+// Clear Pomodoro timer from IndexedDB
+async function clearPomodoroTimerFromDB() {
+  try {
+    const db = await openDB();
+    const transaction = db.transaction(['pomodoro-timer'], 'readwrite');
+    const store = transaction.objectStore('pomodoro-timer');
+    
+    await new Promise((resolve, reject) => {
+      const request = store.delete('current');
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+  } catch (error) {
+    console.error('Error clearing Pomodoro timer from DB:', error);
+  }
+}
 
 // Listen for messages from the app
 self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'SYNC_HABITS') {
     syncHabitsToDB(event.data.habits);
   } else if (event.data && event.data.type === 'POMODORO_TIMER_UPDATE') {
-    pomodoroTimerState = event.data.state;
-    startPomodoroTimerCheck();
+    savePomodoroTimerToDB(event.data.state).then(() => {
+      startPomodoroTimerCheck();
+    });
   } else if (event.data && event.data.type === 'POMODORO_TIMER_CLEAR') {
-    pomodoroTimerState = null;
-    stopPomodoroTimerCheck();
+    clearPomodoroTimerFromDB().then(() => {
+      stopPomodoroTimerCheck();
+    });
   } else if (event.data && event.data.type === 'POMODORO_NOTIFICATION') {
     // Send notification immediately
     self.registration.showNotification(event.data.title, {
@@ -132,9 +204,13 @@ function startPomodoroTimerCheck() {
     clearInterval(pomodoroCheckInterval);
   }
   
+  // Check immediately
+  checkPomodoroTimer();
+  
+  // Then check every 5 seconds (more reliable than 1 second on mobile)
   pomodoroCheckInterval = setInterval(() => {
     checkPomodoroTimer();
-  }, 1000); // Check every second
+  }, 5000);
 }
 
 // Stop checking Pomodoro timer
@@ -146,7 +222,9 @@ function stopPomodoroTimerCheck() {
 }
 
 // Check if Pomodoro timer has completed
-function checkPomodoroTimer() {
+async function checkPomodoroTimer() {
+  const pomodoroTimerState = await loadPomodoroTimerFromDB();
+  
   if (!pomodoroTimerState) {
     return;
   }
@@ -176,9 +254,13 @@ function checkPomodoroTimer() {
       // Start rest timer
       if (pomodoroTimerState.settings) {
         const restMinutes = pomodoroTimerState.settings.restMinutes || 5;
-        pomodoroTimerState.mode = 'rest';
-        pomodoroTimerState.timerEndTimestamp = now + (restMinutes * 60 * 1000);
-        pomodoroTimerState.isPaused = false;
+        const newState = {
+          ...pomodoroTimerState,
+          mode: 'rest',
+          timerEndTimestamp: now + (restMinutes * 60 * 1000),
+          isPaused: false,
+        };
+        await savePomodoroTimerToDB(newState);
       }
     } else if (mode === 'rest') {
       // Rest timer completed
@@ -192,7 +274,7 @@ function checkPomodoroTimer() {
       });
       
       // Clear timer
-      pomodoroTimerState = null;
+      await clearPomodoroTimerFromDB();
       stopPomodoroTimerCheck();
     }
   }
@@ -230,4 +312,9 @@ setInterval(checkNotificationTimes, 60000);
 
 // Check immediately on activation
 checkNotificationTimes();
+
+// Also check Pomodoro timer periodically (in case service worker was terminated)
+setInterval(() => {
+  checkPomodoroTimer();
+}, 30000); // Check every 30 seconds as a backup
 
