@@ -99,12 +99,104 @@ function getHabitsFromDB(db) {
   });
 }
 
+// Pomodoro timer state
+let pomodoroTimerState = null;
+let pomodoroCheckInterval = null;
+
 // Listen for messages from the app
 self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'SYNC_HABITS') {
     syncHabitsToDB(event.data.habits);
+  } else if (event.data && event.data.type === 'POMODORO_TIMER_UPDATE') {
+    pomodoroTimerState = event.data.state;
+    startPomodoroTimerCheck();
+  } else if (event.data && event.data.type === 'POMODORO_TIMER_CLEAR') {
+    pomodoroTimerState = null;
+    stopPomodoroTimerCheck();
+  } else if (event.data && event.data.type === 'POMODORO_NOTIFICATION') {
+    // Send notification immediately
+    self.registration.showNotification(event.data.title, {
+      body: event.data.body,
+      icon: '/favicon.ico',
+      badge: '/favicon.ico',
+      tag: 'pomodoro-timer',
+      requireInteraction: false,
+      vibrate: [200, 100, 200],
+    });
   }
 });
+
+// Start checking Pomodoro timer
+function startPomodoroTimerCheck() {
+  if (pomodoroCheckInterval) {
+    clearInterval(pomodoroCheckInterval);
+  }
+  
+  pomodoroCheckInterval = setInterval(() => {
+    checkPomodoroTimer();
+  }, 1000); // Check every second
+}
+
+// Stop checking Pomodoro timer
+function stopPomodoroTimerCheck() {
+  if (pomodoroCheckInterval) {
+    clearInterval(pomodoroCheckInterval);
+    pomodoroCheckInterval = null;
+  }
+}
+
+// Check if Pomodoro timer has completed
+function checkPomodoroTimer() {
+  if (!pomodoroTimerState) {
+    return;
+  }
+
+  const now = Date.now();
+  
+  // If paused, don't check
+  if (pomodoroTimerState.isPaused) {
+    return;
+  }
+
+  // Check if timer has completed
+  if (pomodoroTimerState.timerEndTimestamp && now >= pomodoroTimerState.timerEndTimestamp) {
+    const mode = pomodoroTimerState.mode;
+    
+    if (mode === 'work') {
+      // Work timer completed
+      self.registration.showNotification('Work Session Complete!', {
+        body: 'Time for a break. Rest timer starting now.',
+        icon: '/favicon.ico',
+        badge: '/favicon.ico',
+        tag: 'pomodoro-work-complete',
+        requireInteraction: false,
+        vibrate: [200, 100, 200],
+      });
+      
+      // Start rest timer
+      if (pomodoroTimerState.settings) {
+        const restMinutes = pomodoroTimerState.settings.restMinutes || 5;
+        pomodoroTimerState.mode = 'rest';
+        pomodoroTimerState.timerEndTimestamp = now + (restMinutes * 60 * 1000);
+        pomodoroTimerState.isPaused = false;
+      }
+    } else if (mode === 'rest') {
+      // Rest timer completed
+      self.registration.showNotification('Break Complete!', {
+        body: 'Ready to work again. Start a new work session when ready.',
+        icon: '/favicon.ico',
+        badge: '/favicon.ico',
+        tag: 'pomodoro-rest-complete',
+        requireInteraction: false,
+        vibrate: [200, 100, 200],
+      });
+      
+      // Clear timer
+      pomodoroTimerState = null;
+      stopPomodoroTimerCheck();
+    }
+  }
+}
 
 // Sync habits to IndexedDB
 async function syncHabitsToDB(habits) {

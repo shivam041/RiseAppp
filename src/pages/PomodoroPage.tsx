@@ -7,15 +7,26 @@ interface PomodoroSettings {
   restMinutes: number;
 }
 
+interface TimerState {
+  mode: TimerMode;
+  timerEndTimestamp: number | null;
+  isPaused: boolean;
+  pausedTimeRemaining: number | null;
+}
+
 const DEFAULT_WORK_MINUTES = 25;
 const DEFAULT_REST_MINUTES = 5;
+const TIMER_STATE_KEY = 'pomodoro-timer-state';
 
 const PomodoroPage: React.FC = () => {
   const [mode, setMode] = useState<TimerMode>('idle');
   const [timeRemaining, setTimeRemaining] = useState<number>(DEFAULT_WORK_MINUTES * 60);
   const [isRunning, setIsRunning] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
-  const [sessionCount, setSessionCount] = useState(0);
+  const [sessionCount, setSessionCount] = useState(() => {
+    const saved = localStorage.getItem('pomodoro-session-count');
+    return saved ? parseInt(saved, 10) : 0;
+  });
   const [settings, setSettings] = useState<PomodoroSettings>(() => {
     const saved = localStorage.getItem('pomodoro-settings');
     if (saved) {
@@ -32,6 +43,77 @@ const PomodoroPage: React.FC = () => {
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const notificationPermissionRef = useRef<NotificationPermission>('default');
   const handleTimerCompleteRef = useRef<() => void>();
+  const timerEndTimestampRef = useRef<number | null>(null);
+
+  // Load timer state from localStorage on mount
+  useEffect(() => {
+    const savedState = localStorage.getItem(TIMER_STATE_KEY);
+    if (savedState) {
+      try {
+        const state: TimerState = JSON.parse(savedState);
+        if (state.mode !== 'idle' && state.timerEndTimestamp) {
+          const now = Date.now();
+          const endTime = state.timerEndTimestamp;
+          
+          if (state.isPaused && state.pausedTimeRemaining !== null) {
+            // Restore paused state
+            setMode(state.mode);
+            setTimeRemaining(state.pausedTimeRemaining);
+            setIsPaused(true);
+            setIsRunning(false);
+            timerEndTimestampRef.current = null;
+          } else if (endTime > now) {
+            // Timer is still running - restore it
+            const remaining = Math.ceil((endTime - now) / 1000);
+            setMode(state.mode);
+            setTimeRemaining(remaining);
+            setIsRunning(true);
+            setIsPaused(false);
+            timerEndTimestampRef.current = endTime;
+          } else {
+            // Timer has completed while app was closed
+            handleTimerCompleteFromState(state.mode);
+            clearTimerState();
+          }
+        }
+      } catch (error) {
+        console.error('Error loading timer state:', error);
+        clearTimerState();
+      }
+    }
+  }, []);
+
+  // Save timer state to localStorage
+  const saveTimerState = useCallback(() => {
+    const state: TimerState = {
+      mode,
+      timerEndTimestamp: timerEndTimestampRef.current,
+      isPaused,
+      pausedTimeRemaining: isPaused ? timeRemaining : null,
+    };
+    localStorage.setItem(TIMER_STATE_KEY, JSON.stringify(state));
+    
+    // Also sync to service worker for background notifications
+    if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+      navigator.serviceWorker.controller.postMessage({
+        type: 'POMODORO_TIMER_UPDATE',
+        state: {
+          ...state,
+          settings,
+        },
+      });
+    }
+  }, [mode, isPaused, timeRemaining, settings]);
+
+  const clearTimerState = useCallback(() => {
+    localStorage.removeItem(TIMER_STATE_KEY);
+    timerEndTimestampRef.current = null;
+    if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+      navigator.serviceWorker.controller.postMessage({
+        type: 'POMODORO_TIMER_CLEAR',
+      });
+    }
+  }, []);
 
   // Request notification permission
   useEffect(() => {
@@ -49,17 +131,54 @@ const PomodoroPage: React.FC = () => {
     localStorage.setItem('pomodoro-settings', JSON.stringify(settings));
   }, [settings]);
 
+  // Save session count
+  useEffect(() => {
+    localStorage.setItem('pomodoro-session-count', sessionCount.toString());
+  }, [sessionCount]);
+
+  // Handle visibility change (app goes to background/foreground)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && isRunning && !isPaused && timerEndTimestampRef.current) {
+        // Recalculate time remaining based on stored end timestamp
+        const now = Date.now();
+        const endTime = timerEndTimestampRef.current;
+        const remaining = Math.ceil((endTime - now) / 1000);
+        
+        if (remaining <= 0) {
+          handleTimerCompleteRef.current?.();
+        } else {
+          setTimeRemaining(remaining);
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [isRunning, isPaused]);
+
   // Timer countdown logic
   useEffect(() => {
     if (isRunning && !isPaused) {
+      // Calculate end timestamp if not set
+      if (!timerEndTimestampRef.current) {
+        const now = Date.now();
+        timerEndTimestampRef.current = now + (timeRemaining * 1000);
+      }
+
       intervalRef.current = setInterval(() => {
-        setTimeRemaining((prev) => {
-          if (prev <= 1) {
+        const now = Date.now();
+        const endTime = timerEndTimestampRef.current;
+        
+        if (endTime) {
+          const remaining = Math.ceil((endTime - now) / 1000);
+          
+          if (remaining <= 0) {
             handleTimerCompleteRef.current?.();
-            return 0;
+          } else {
+            setTimeRemaining(remaining);
           }
-          return prev - 1;
-        });
+        }
       }, 1000);
     } else {
       if (intervalRef.current) {
@@ -68,12 +187,17 @@ const PomodoroPage: React.FC = () => {
       }
     }
 
+    // Save state whenever it changes
+    if (mode !== 'idle') {
+      saveTimerState();
+    }
+
     return () => {
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
       }
     };
-  }, [isRunning, isPaused]);
+  }, [isRunning, isPaused, mode, saveTimerState]);
 
   const sendNotification = useCallback((title: string, body: string) => {
     if ('Notification' in window && notificationPermissionRef.current === 'granted') {
@@ -82,9 +206,37 @@ const PomodoroPage: React.FC = () => {
         icon: '/favicon.ico',
         badge: '/favicon.ico',
         tag: 'pomodoro-timer',
+        requireInteraction: false,
+        silent: false,
+      });
+    }
+    
+    // Also send via service worker for background notifications
+    if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+      navigator.serviceWorker.controller.postMessage({
+        type: 'POMODORO_NOTIFICATION',
+        title,
+        body,
       });
     }
   }, []);
+
+  const handleTimerCompleteFromState = (completedMode: TimerMode) => {
+    if (completedMode === 'work') {
+      setMode('rest');
+      setTimeRemaining(settings.restMinutes * 60);
+      setIsRunning(true);
+      setIsPaused(false);
+      setSessionCount((prev) => prev + 1);
+      sendNotification('Work Session Complete!', 'Time for a break. Rest timer starting now.');
+    } else if (completedMode === 'rest') {
+      setMode('idle');
+      setIsRunning(false);
+      setIsPaused(false);
+      setTimeRemaining(settings.workMinutes * 60);
+      sendNotification('Break Complete!', 'Ready to work again. Start a new work session when ready.');
+    }
+  };
 
   const handleTimerComplete = useCallback(() => {
     if (intervalRef.current) {
@@ -95,6 +247,7 @@ const PomodoroPage: React.FC = () => {
     setMode((currentMode) => {
       if (currentMode === 'work') {
         // Work timer completed - start rest timer
+        timerEndTimestampRef.current = Date.now() + (settings.restMinutes * 60 * 1000);
         setTimeRemaining(settings.restMinutes * 60);
         setIsRunning(true);
         setIsPaused(false);
@@ -103,6 +256,7 @@ const PomodoroPage: React.FC = () => {
         return 'rest';
       } else if (currentMode === 'rest') {
         // Rest timer completed - stop
+        clearTimerState();
         setIsRunning(false);
         setIsPaused(false);
         setTimeRemaining(settings.workMinutes * 60);
@@ -111,7 +265,7 @@ const PomodoroPage: React.FC = () => {
       }
       return currentMode;
     });
-  }, [settings, sendNotification]);
+  }, [settings, sendNotification, clearTimerState]);
 
   // Keep ref updated
   useEffect(() => {
@@ -125,16 +279,22 @@ const PomodoroPage: React.FC = () => {
     }
     setIsRunning(true);
     setIsPaused(false);
+    timerEndTimestampRef.current = Date.now() + (timeRemaining * 1000);
+    saveTimerState();
   };
 
   const pauseTimer = () => {
     setIsPaused(true);
     setIsRunning(false);
+    timerEndTimestampRef.current = null;
+    saveTimerState();
   };
 
   const resumeTimer = () => {
     setIsPaused(false);
     setIsRunning(true);
+    timerEndTimestampRef.current = Date.now() + (timeRemaining * 1000);
+    saveTimerState();
   };
 
   const resetTimer = () => {
@@ -142,10 +302,12 @@ const PomodoroPage: React.FC = () => {
       clearInterval(intervalRef.current);
       intervalRef.current = null;
     }
+    clearTimerState();
     setMode('idle');
     setIsRunning(false);
     setIsPaused(false);
     setTimeRemaining(settings.workMinutes * 60);
+    timerEndTimestampRef.current = null;
   };
 
   const formatTime = (seconds: number): string => {
@@ -182,6 +344,11 @@ const PomodoroPage: React.FC = () => {
             {sessionCount > 0 && (
               <p className="text-gray-600 dark:text-gray-400 mt-1">
                 Session {sessionCount} {sessionCount === 1 ? 'completed' : 'completed'}
+              </p>
+            )}
+            {isRunning && !isPaused && (
+              <p className="text-sm text-indigo-600 dark:text-indigo-400 mt-1">
+                Timer continues in background
               </p>
             )}
           </div>
@@ -330,6 +497,9 @@ const PomodoroPage: React.FC = () => {
               {isRestMode && isRunning && 'Take a well-deserved break!'}
               {isRestMode && isPaused && 'Break paused'}
             </p>
+            <p className="text-xs text-gray-500 dark:text-gray-500 mt-2">
+              Notifications will appear on your lock screen when the timer completes
+            </p>
           </div>
         </div>
       </div>
@@ -338,4 +508,3 @@ const PomodoroPage: React.FC = () => {
 };
 
 export default PomodoroPage;
-
