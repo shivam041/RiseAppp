@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import SimpleTracker from '../components/SimpleTracker';
 import HabitsBoard, { HabitItem } from '../components/HabitsBoard';
 import HabitNotes, { HabitNote } from '../components/HabitNotes';
