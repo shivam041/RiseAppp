@@ -1,11 +1,13 @@
 import React, { useEffect, useState } from 'react';
+import { Routes, Route } from 'react-router-dom';
 import './App.css';
-import SimpleTracker from './components/SimpleTracker';
-import StreakCalendar from './components/StreakCalendar';
 import ReminderManager from './components/ReminderManager';
 import HabitsBoard, { HabitItem } from './components/HabitsBoard';
 import HabitNotes, { HabitNote } from './components/HabitNotes';
-import DailyTaskView from './components/DailyTaskView';
+import BottomNav from './components/BottomNav';
+import HomePage from './pages/HomePage';
+import CalendarPage from './pages/CalendarPage';
+import QuotesPage from './pages/QuotesPage';
 
 type Store = {
   habits: HabitItem[];
@@ -53,7 +55,6 @@ function saveStore(store: Store) {
 
 const App: React.FC = () => {
   const [store, setStore] = useState<Store>(() => loadStore());
-  const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [darkMode, setDarkMode] = useState(() => {
     const saved = localStorage.getItem('rise_dark_mode');
     return saved === 'true';
@@ -72,31 +73,19 @@ const App: React.FC = () => {
     }
   }, [darkMode]);
 
-  const addHabit = (base: Omit<HabitItem, 'id' | 'completedDates'>) => {
-    const id = crypto.randomUUID();
-    const newHabit: HabitItem = { id, ...base, completedDates: [] };
-    setStore((prev) => ({
-      habits: [...prev.habits, newHabit],
-      selectedId: id,
-      notesByHabit: { ...prev.notesByHabit, [id]: [] },
-    }));
-  };
-
-  const selectHabit = (id: string) => setStore((prev) => ({ ...prev, selectedId: id }));
-  const editHabit = (id: string, updatedHabit: Omit<HabitItem, 'id' | 'completedDates'>) => {
-    setStore((prev) => ({
-      ...prev,
-      habits: prev.habits.map((h) =>
-        h.id === id ? { ...h, ...updatedHabit } : h
-      ),
-    }));
-  };
-
-  const deleteHabit = (id: string) => setStore((prev) => ({
-    habits: prev.habits.filter((h) => h.id !== id),
-    selectedId: prev.selectedId === id ? null : prev.selectedId,
-    notesByHabit: Object.fromEntries(Object.entries(prev.notesByHabit).filter(([k]) => k !== id)),
-  }));
+  // Register service worker
+  useEffect(() => {
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker
+        .register('/sw.js')
+        .then((registration) => {
+          console.log('Service Worker registered:', registration);
+        })
+        .catch((error) => {
+          console.log('Service Worker registration failed:', error);
+        });
+    }
+  }, []);
 
   const handleToggleComplete = (habitId: string, dateIso: string) => {
     setStore((prev) => {
@@ -115,45 +104,38 @@ const App: React.FC = () => {
     });
   };
 
-  const addNote = (habitId: string, note: Omit<HabitNote, 'id' | 'createdAt'>) => {
-    const id = crypto.randomUUID();
-    const createdAt = new Date().toISOString();
-    setStore((prev) => ({
-      ...prev,
-      notesByHabit: {
-        ...prev.notesByHabit,
-        [habitId]: [...(prev.notesByHabit[habitId] || []), { id, content: note.content, reminderTime: note.reminderTime, createdAt }],
-      },
-    }));
-  };
+  const testNotification = async () => {
+    if (!('Notification' in window)) {
+      alert('This browser does not support notifications');
+      return;
+    }
 
-  const deleteNote = (habitId: string, id: string) => {
-    setStore((prev) => ({
-      ...prev,
-      notesByHabit: {
-        ...prev.notesByHabit,
-        [habitId]: (prev.notesByHabit[habitId] || []).filter((n) => n.id !== id),
-      },
-    }));
-  };
+    if (Notification.permission === 'denied') {
+      alert('Notification permission was denied. Please enable it in your browser settings.');
+      return;
+    }
 
-  const selectedHabit = store.habits.find((h) => h.id === store.selectedId) || null;
+    if (Notification.permission !== 'granted') {
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') {
+        alert('Notification permission was denied.');
+        return;
+      }
+    }
+
+    new Notification('Rise: Test Notification', {
+      body: 'This is a test notification. Your notifications are working!',
+      icon: '/favicon.ico',
+      badge: '/favicon.ico',
+      tag: 'rise-test',
+    });
+  };
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       <ReminderManager
-        reminders={[
-          ...store.habits.flatMap((h) => 
-            h.reminderTimes.map((time, index) => ({ 
-              id: `habit-${h.id}-${index}`, 
-              title: `Time for: ${h.action}`, 
-              time 
-            }))
-          ),
-          ...Object.entries(store.notesByHabit).flatMap(([hid, notes]) =>
-            notes.filter((n) => n.reminderTime).map((n) => ({ id: `note-${hid}-${n.id}`, title: n.content, time: n.reminderTime as string }))
-          ),
-        ]}
+        habits={store.habits}
+        notesByHabit={store.notesByHabit}
       />
 
       <header className="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700">
@@ -162,56 +144,53 @@ const App: React.FC = () => {
             <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Rise: 66-Day Habits</h1>
             <p className="text-gray-600 dark:text-gray-400">Create multiple focused habits. Track each streak.</p>
           </div>
-          <button
-            onClick={() => setDarkMode(!darkMode)}
-            className="p-2 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
-            title={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
-          >
-            {darkMode ? (
+          <div className="flex items-center gap-2">
+            <button
+              onClick={testNotification}
+              className="p-2 rounded-lg bg-indigo-100 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-200 dark:hover:bg-indigo-900/30 transition-colors"
+              title="Test Notification"
+            >
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
               </svg>
-            ) : (
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
-              </svg>
-            )}
-          </button>
+            </button>
+            <button
+              onClick={() => setDarkMode(!darkMode)}
+              className="p-2 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+              title={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
+            >
+              {darkMode ? (
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+                </svg>
+              ) : (
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+                </svg>
+              )}
+            </button>
+          </div>
         </div>
       </header>
 
-      <main className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
-        <HabitsBoard
-          habits={store.habits}
-          selectedId={store.selectedId}
-          onSelect={selectHabit}
-          onAdd={addHabit}
-          onEdit={editHabit}
-          onDelete={deleteHabit}
+      <Routes>
+        <Route
+          path="/"
+          element={<HomePage store={store} onStoreChange={setStore} />}
         />
-
-        {selectedHabit ? (
-          <>
-            <SimpleTracker startDate={selectedHabit.startDate} completedDates={[...selectedHabit.completedDates].sort()} onCheckIn={(date) => handleToggleComplete(selectedHabit.id, date)} />
-            <StreakCalendar startDate={selectedHabit.startDate} completedDates={[...selectedHabit.completedDates].sort()} onDateClick={setSelectedDate} />
-            <HabitNotes
-              notes={store.notesByHabit[selectedHabit.id] || []}
-              onAdd={(n) => addNote(selectedHabit.id, n)}
-              onDelete={(id) => deleteNote(selectedHabit.id, id)}
+        <Route
+          path="/calendar"
+          element={
+            <CalendarPage
+              habits={store.habits}
+              onToggleComplete={handleToggleComplete}
             />
-          </>
-        ) : (
-          <div className="p-6 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400">Select a habit to track its streak and notes.</div>
-        )}
+          }
+        />
+        <Route path="/quotes" element={<QuotesPage />} />
+      </Routes>
 
-        {selectedDate && (
-          <DailyTaskView
-            date={selectedDate}
-            habits={store.habits}
-            onToggleComplete={handleToggleComplete}
-          />
-        )}
-      </main>
+      <BottomNav />
     </div>
   );
 };

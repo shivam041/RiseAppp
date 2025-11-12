@@ -1,84 +1,77 @@
 import React, { useEffect } from 'react';
+import { HabitItem } from './HabitsBoard';
+import { HabitNote } from './HabitNotes';
 
 interface ReminderManagerProps {
-  reminders: Array<{ id: string; title: string; time: string }>;
+  habits: HabitItem[];
+  notesByHabit: Record<string, HabitNote[]>;
 }
 
-function scheduleNextTimeout(reminderTime: string, cb: () => void) {
-  const now = new Date();
-  const [hh, mm] = reminderTime.split(':').map((v) => parseInt(v, 10));
-  const next = new Date();
-  next.setHours(hh, mm, 0, 0);
-  if (next <= now) {
-    next.setDate(next.getDate() + 1);
-  }
-  const ms = next.getTime() - now.getTime();
-  return window.setTimeout(cb, ms);
-}
-
-const ReminderManager: React.FC<ReminderManagerProps> = ({ reminders }) => {
+const ReminderManager: React.FC<ReminderManagerProps> = ({ habits, notesByHabit }) => {
   useEffect(() => {
-    let cancelled = false;
-    const timers: number[] = [];
+    // Request notification permission
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
 
-    const ensurePermission = async () => {
-      if (!('Notification' in window)) {
-        console.log('This browser does not support notifications');
-        return false;
+    // Sync habits to service worker via IndexedDB
+    if ('serviceWorker' in navigator && 'indexedDB' in window) {
+      syncHabitsToServiceWorker(habits);
+    }
+  }, [habits]);
+
+  const syncHabitsToServiceWorker = async (habits: HabitItem[]) => {
+    try {
+      // Store habits in IndexedDB for service worker access
+      const db = await openIndexedDB();
+      const transaction = db.transaction(['habits'], 'readwrite');
+      const store = transaction.objectStore('habits');
+      
+      // Clear existing
+      await new Promise<void>((resolve, reject) => {
+        const clearRequest = store.clear();
+        clearRequest.onsuccess = () => resolve();
+        clearRequest.onerror = () => reject(clearRequest.error);
+      });
+      
+      // Add all habits
+      for (const habit of habits) {
+        await new Promise<void>((resolve, reject) => {
+          const addRequest = store.add(habit);
+          addRequest.onsuccess = () => resolve();
+          addRequest.onerror = () => reject(addRequest.error);
+        });
       }
-      if (Notification.permission === 'granted') return true;
-      if (Notification.permission !== 'denied') {
-        const res = await Notification.requestPermission();
-        if (res === 'granted') {
-          console.log('Notification permission granted');
-        } else {
-          console.log('Notification permission denied');
+
+      // Also send message to service worker
+      if (navigator.serviceWorker.controller) {
+        navigator.serviceWorker.controller.postMessage({
+          type: 'SYNC_HABITS',
+          habits: habits,
+        });
+      }
+    } catch (error) {
+      console.error('Error syncing habits to service worker:', error);
+    }
+  };
+
+  const openIndexedDB = (): Promise<IDBDatabase> => {
+    return new Promise((resolve, reject) => {
+      const request = indexedDB.open('rise-app-db', 1);
+      
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve(request.result);
+      
+      request.onupgradeneeded = (event) => {
+        const db = (event.target as IDBOpenDBRequest).result;
+        if (!db.objectStoreNames.contains('habits')) {
+          db.createObjectStore('habits', { keyPath: 'id' });
         }
-        return res === 'granted';
-      }
-      console.log('Notification permission was previously denied');
-      return false;
-    };
-
-    const scheduleAll = async () => {
-      const ok = await ensurePermission();
-      const makeFire = (title: string, time: string) => {
-        const fire = () => {
-          if (!cancelled && ok && 'Notification' in window) {
-            try {
-              new Notification('Rise Reminder', { 
-                body: title,
-                icon: '/favicon.ico',
-                badge: '/favicon.ico',
-                tag: 'rise-habit-reminder',
-                requireInteraction: false
-              });
-            } catch (error) {
-              console.error('Failed to create notification:', error);
-            }
-          }
-          const t = scheduleNextTimeout(time, fire);
-          timers.push(t);
-        };
-        return fire;
       };
-      for (const r of reminders) {
-        const fire = makeFire(r.title, r.time);
-        const t = scheduleNextTimeout(r.time, fire);
-        timers.push(t);
-      }
-    };
-
-    scheduleAll();
-    return () => {
-      cancelled = true;
-      for (const t of timers) window.clearTimeout(t);
-    };
-  }, [reminders]);
+    });
+  };
 
   return null;
 };
 
 export default ReminderManager;
-
-
