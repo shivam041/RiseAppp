@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useFocusTracking } from '../hooks/useFocusTracking';
 
 type TimerMode = 'work' | 'rest' | 'idle';
 
@@ -19,6 +20,7 @@ const DEFAULT_REST_MINUTES = 5;
 const TIMER_STATE_KEY = 'pomodoro-timer-state';
 
 const PomodoroPage: React.FC = () => {
+  const { isFocusModeActive, startFocusSession, endFocusSession } = useFocusTracking();
   const [mode, setMode] = useState<TimerMode>('idle');
   const [timeRemaining, setTimeRemaining] = useState<number>(DEFAULT_WORK_MINUTES * 60);
   const [isRunning, setIsRunning] = useState(false);
@@ -337,12 +339,16 @@ const PomodoroPage: React.FC = () => {
         setIsRunning(false);
         setIsPaused(false);
         setTimeRemaining(settings.workMinutes * 60);
+        // End focus session when rest timer completes
+        if (isFocusModeActive) {
+          endFocusSession();
+        }
         sendNotification('Break Complete!', 'Ready to work again. Start a new work session when ready.');
         return 'idle';
       }
       return currentMode;
     });
-  }, [settings, sendNotification, clearTimerState]);
+  }, [settings, sendNotification, clearTimerState, isFocusModeActive, endFocusSession]);
 
   // Keep ref updated
   useEffect(() => {
@@ -353,6 +359,10 @@ const PomodoroPage: React.FC = () => {
     if (mode === 'idle') {
       setMode('work');
       setTimeRemaining(settings.workMinutes * 60);
+      // Auto-start focus session when starting work timer
+      if (!isFocusModeActive) {
+        startFocusSession();
+      }
     }
     setIsRunning(true);
     setIsPaused(false);
@@ -426,6 +436,11 @@ const PomodoroPage: React.FC = () => {
             {isRunning && !isPaused && (
               <p className="text-sm text-indigo-600 dark:text-indigo-400 mt-1">
                 Timer continues in background
+              </p>
+            )}
+            {isFocusModeActive && mode === 'work' && (
+              <p className="text-sm text-green-600 dark:text-green-400 mt-1">
+                🔒 Focus Mode Active - Stay focused!
               </p>
             )}
           </div>
@@ -574,6 +589,11 @@ const PomodoroPage: React.FC = () => {
               {isRestMode && isRunning && 'Take a well-deserved break!'}
               {isRestMode && isPaused && 'Break paused'}
             </p>
+            {isFocusModeActive && mode === 'work' && (
+              <p className="text-sm text-green-600 dark:text-green-400 mt-2">
+                ⚠️ Focus Mode is tracking interruptions. Stay in the app!
+              </p>
+            )}
             <p className="text-xs text-gray-500 dark:text-gray-500 mt-2">
               Notifications will appear on your lock screen when the timer completes
             </p>

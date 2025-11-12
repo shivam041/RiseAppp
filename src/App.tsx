@@ -6,10 +6,12 @@ import { HabitItem } from './components/HabitsBoard';
 import { HabitNote } from './components/HabitNotes';
 import BottomNav from './components/BottomNav';
 import NavMenu from './components/NavMenu';
+import FocusModeIndicator from './components/FocusModeIndicator';
 import HomePage from './pages/HomePage';
 import CalendarPage from './pages/CalendarPage';
 import QuotesPage from './pages/QuotesPage';
 import PomodoroPage from './pages/PomodoroPage';
+import FocusModePage from './pages/FocusModePage';
 
 type Store = {
   habits: HabitItem[];
@@ -176,6 +178,8 @@ const App: React.FC = () => {
         </div>
       </header>
 
+      <FocusModeIndicator />
+
       <Routes>
         <Route
           path="/"
@@ -192,6 +196,7 @@ const App: React.FC = () => {
         />
         <Route path="/quotes" element={<QuotesPage />} />
         <Route path="/pomodoro" element={<PomodoroPage />} />
+        <Route path="/focus" element={<FocusModePage />} />
       </Routes>
 
       <BottomNav />
