@@ -5,9 +5,11 @@ import ReminderManager from './components/ReminderManager';
 import { HabitItem } from './components/HabitsBoard';
 import { HabitNote } from './components/HabitNotes';
 import BottomNav from './components/BottomNav';
+import NavMenu from './components/NavMenu';
 import HomePage from './pages/HomePage';
 import CalendarPage from './pages/CalendarPage';
 import QuotesPage from './pages/QuotesPage';
+import PomodoroPage from './pages/PomodoroPage';
 
 type Store = {
   habits: HabitItem[];
@@ -145,6 +147,7 @@ const App: React.FC = () => {
             <p className="text-gray-600 dark:text-gray-400">Create multiple focused habits. Track each streak.</p>
           </div>
           <div className="flex items-center gap-2">
+            <NavMenu />
             <button
               onClick={testNotification}
               className="p-2 rounded-lg bg-indigo-100 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-200 dark:hover:bg-indigo-900/30 transition-colors"
@@ -188,6 +191,7 @@ const App: React.FC = () => {
           }
         />
         <Route path="/quotes" element={<QuotesPage />} />
+        <Route path="/pomodoro" element={<PomodoroPage />} />
       </Routes>
 
       <BottomNav />
