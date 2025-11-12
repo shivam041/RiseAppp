@@ -46,6 +46,7 @@ const PomodoroPage: React.FC = () => {
   const timerEndTimestampRef = useRef<number | null>(null);
   const clearTimerStateRef = useRef<() => void>();
   const handleTimerCompleteFromStateRef = useRef<(mode: TimerMode) => void>();
+  const timeRemainingRef = useRef<number>(DEFAULT_WORK_MINUTES * 60);
 
   const clearTimerState = useCallback(() => {
     localStorage.removeItem(TIMER_STATE_KEY);
@@ -165,13 +166,18 @@ const PomodoroPage: React.FC = () => {
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, [isRunning, isPaused]);
 
+  // Keep timeRemaining ref updated
+  useEffect(() => {
+    timeRemainingRef.current = timeRemaining;
+  }, [timeRemaining]);
+
   // Timer countdown logic
   useEffect(() => {
     if (isRunning && !isPaused) {
       // Calculate end timestamp if not set
       if (!timerEndTimestampRef.current) {
         const now = Date.now();
-        timerEndTimestampRef.current = now + (timeRemaining * 1000);
+        timerEndTimestampRef.current = now + (timeRemainingRef.current * 1000);
       }
 
       intervalRef.current = setInterval(() => {
