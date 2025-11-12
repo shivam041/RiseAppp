@@ -44,6 +44,23 @@ const PomodoroPage: React.FC = () => {
   const notificationPermissionRef = useRef<NotificationPermission>('default');
   const handleTimerCompleteRef = useRef<() => void>();
   const timerEndTimestampRef = useRef<number | null>(null);
+  const clearTimerStateRef = useRef<() => void>();
+  const handleTimerCompleteFromStateRef = useRef<(mode: TimerMode) => void>();
+
+  const clearTimerState = useCallback(() => {
+    localStorage.removeItem(TIMER_STATE_KEY);
+    timerEndTimestampRef.current = null;
+    if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+      navigator.serviceWorker.controller.postMessage({
+        type: 'POMODORO_TIMER_CLEAR',
+      });
+    }
+  }, []);
+
+  // Keep ref updated
+  useEffect(() => {
+    clearTimerStateRef.current = clearTimerState;
+  }, [clearTimerState]);
 
   // Load timer state from localStorage on mount
   useEffect(() => {
@@ -72,15 +89,16 @@ const PomodoroPage: React.FC = () => {
             timerEndTimestampRef.current = endTime;
           } else {
             // Timer has completed while app was closed
-            handleTimerCompleteFromState(state.mode);
-            clearTimerState();
+            handleTimerCompleteFromStateRef.current?.(state.mode);
+            clearTimerStateRef.current?.();
           }
         }
       } catch (error) {
         console.error('Error loading timer state:', error);
-        clearTimerState();
+        clearTimerStateRef.current?.();
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Save timer state to localStorage
@@ -104,16 +122,6 @@ const PomodoroPage: React.FC = () => {
       });
     }
   }, [mode, isPaused, timeRemaining, settings]);
-
-  const clearTimerState = useCallback(() => {
-    localStorage.removeItem(TIMER_STATE_KEY);
-    timerEndTimestampRef.current = null;
-    if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-      navigator.serviceWorker.controller.postMessage({
-        type: 'POMODORO_TIMER_CLEAR',
-      });
-    }
-  }, []);
 
   // Request notification permission
   useEffect(() => {
@@ -221,7 +229,7 @@ const PomodoroPage: React.FC = () => {
     }
   }, []);
 
-  const handleTimerCompleteFromState = (completedMode: TimerMode) => {
+  const handleTimerCompleteFromState = useCallback((completedMode: TimerMode) => {
     if (completedMode === 'work') {
       setMode('rest');
       setTimeRemaining(settings.restMinutes * 60);
@@ -236,7 +244,12 @@ const PomodoroPage: React.FC = () => {
       setTimeRemaining(settings.workMinutes * 60);
       sendNotification('Break Complete!', 'Ready to work again. Start a new work session when ready.');
     }
-  };
+  }, [settings, sendNotification]);
+
+  // Keep ref updated
+  useEffect(() => {
+    handleTimerCompleteFromStateRef.current = handleTimerCompleteFromState;
+  }, [handleTimerCompleteFromState]);
 
   const handleTimerComplete = useCallback(() => {
     if (intervalRef.current) {
