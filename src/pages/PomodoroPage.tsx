@@ -48,6 +48,23 @@ const PomodoroPage: React.FC = () => {
   const handleTimerCompleteFromStateRef = useRef<(mode: TimerMode) => void>();
   const timeRemainingRef = useRef<number>(DEFAULT_WORK_MINUTES * 60);
 
+  // Open IndexedDB for Pomodoro timer
+  const openPomodoroDB = useCallback((): Promise<IDBDatabase> => {
+    return new Promise((resolve, reject) => {
+      const request = indexedDB.open('rise-app-db', 2);
+      
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve(request.result);
+      
+      request.onupgradeneeded = (event) => {
+        const db = (event.target as IDBOpenDBRequest).result;
+        if (!db.objectStoreNames.contains('pomodoro-timer')) {
+          db.createObjectStore('pomodoro-timer', { keyPath: 'id' });
+        }
+      };
+    });
+  }, []);
+
   const clearTimerState = useCallback(async () => {
     localStorage.removeItem(TIMER_STATE_KEY);
     timerEndTimestampRef.current = null;
@@ -164,23 +181,6 @@ const PomodoroPage: React.FC = () => {
       });
     }
   }, [mode, isPaused, timeRemaining, settings, openPomodoroDB]);
-
-  // Open IndexedDB for Pomodoro timer
-  const openPomodoroDB = useCallback((): Promise<IDBDatabase> => {
-    return new Promise((resolve, reject) => {
-      const request = indexedDB.open('rise-app-db', 2);
-      
-      request.onerror = () => reject(request.error);
-      request.onsuccess = () => resolve(request.result);
-      
-      request.onupgradeneeded = (event) => {
-        const db = (event.target as IDBOpenDBRequest).result;
-        if (!db.objectStoreNames.contains('pomodoro-timer')) {
-          db.createObjectStore('pomodoro-timer', { keyPath: 'id' });
-        }
-      };
-    });
-  }, []);
 
   // Request notification permission
   useEffect(() => {
