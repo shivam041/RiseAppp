@@ -29,36 +29,44 @@ export interface FocusStats {
   averageSessionLength: number; // in seconds
 }
 
+const getDefaultStats = (): FocusStats => ({
+  totalFocusTime: 0,
+  totalInterruptions: 0,
+  longestStreak: 0,
+  currentStreak: 0,
+  sessionsCompleted: 0,
+  averageSessionLength: 0,
+});
+
 export const useFocusTracking = () => {
   const [isFocusModeActive, setIsFocusModeActive] = useState(false);
   const [currentSession, setCurrentSession] = useState<FocusSession | null>(null);
   const [isAppVisible, setIsAppVisible] = useState(true);
   const [timeAway, setTimeAway] = useState(0); // seconds away from app
   const [stats, setStats] = useState<FocusStats>(() => {
-    const saved = localStorage.getItem(FOCUS_STATS_KEY);
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch {
+    try {
+      if (typeof window === 'undefined' || !window.localStorage) {
         return getDefaultStats();
       }
+      const saved = localStorage.getItem(FOCUS_STATS_KEY);
+      if (saved) {
+        try {
+          return JSON.parse(saved);
+        } catch {
+          return getDefaultStats();
+        }
+      }
+      return getDefaultStats();
+    } catch (error) {
+      console.error('Error loading focus stats:', error);
+      return getDefaultStats();
     }
-    return getDefaultStats();
   });
 
   const sessionStartTimeRef = useRef<number | null>(null);
   const interruptionStartTimeRef = useRef<number | null>(null);
   const visibilityCheckIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const lastVisibilityChangeRef = useRef<number>(Date.now());
-
-  const getDefaultStats = (): FocusStats => ({
-    totalFocusTime: 0,
-    totalInterruptions: 0,
-    longestStreak: 0,
-    currentStreak: 0,
-    sessionsCompleted: 0,
-    averageSessionLength: 0,
-  });
 
   // Track visibility changes
   useEffect(() => {

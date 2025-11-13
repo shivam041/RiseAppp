@@ -9,7 +9,7 @@ body {
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: #f9fafb; /* Light gray background instead of gradient */
   min-height: 100vh;
 }
 
@@ -22,6 +22,12 @@ body {
   .auth-container {
     @apply min-h-screen flex items-center justify-center py-6 px-4;
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  }
+  
+  /* Ensure root element takes full height */
+  #root {
+    min-height: 100vh;
+    position: relative;
   }
   
   .auth-card {

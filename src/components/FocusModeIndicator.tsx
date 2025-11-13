@@ -10,7 +10,11 @@ const FocusModeIndicator: React.FC = () => {
   React.useEffect(() => {
     if (isFocusModeActive) {
       const interval = setInterval(() => {
-        setCurrentTime(getCurrentFocusTime());
+        try {
+          setCurrentTime(getCurrentFocusTime());
+        } catch (error) {
+          console.error('Error getting current focus time:', error);
+        }
       }, 1000);
       return () => clearInterval(interval);
     }
