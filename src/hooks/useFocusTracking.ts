@@ -240,7 +240,7 @@ export const useFocusTracking = () => {
     interruptionStartTimeRef.current = null;
     setTimeAway(0);
     localStorage.removeItem(CURRENT_SESSION_KEY);
-  }, [currentSession, timeAway]);
+  }, [currentSession]);
 
   const getCurrentFocusTime = useCallback((): number => {
     if (!sessionStartTimeRef.current || !isFocusModeActive) return 0;
