@@ -1,5 +1,6 @@
 const CACHE_NAME = 'rise-app-v1';
-const NOTIFICATION_TIMES = ['08:00', '14:00', '20:00']; // 8 AM, 2 PM, 8 PM
+// Track last notification sent per habit to avoid duplicates
+const lastNotificationSent = new Map(); // Map<habitId-reminderTime, timestamp>
 
 // Install service worker
 self.addEventListener('install', (event) => {
@@ -7,22 +8,6 @@ self.addEventListener('install', (event) => {
   self.skipWaiting();
 });
 
-// Activate service worker
-self.addEventListener('activate', (event) => {
-  console.log('Service Worker activating...');
-  event.waitUntil(
-    Promise.all([
-      self.clients.claim(),
-      // Load and check Pomodoro timer on activation
-      loadPomodoroTimerFromDB().then((state) => {
-        if (state && !state.isPaused && state.timerEndTimestamp) {
-          // Start checking if timer is active
-          startPomodoroTimerCheck();
-        }
-      })
-    ])
-  );
-});
 
 // Handle notification clicks
 self.addEventListener('notificationclick', (event) => {
@@ -33,47 +18,71 @@ self.addEventListener('notificationclick', (event) => {
 });
 
 // Check for notification times
-function checkNotificationTimes() {
+async function checkNotificationTimes() {
   const now = new Date();
   const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
   const currentDay = now.getDay(); // 0 = Sunday, 1 = Monday, etc.
+  const today = now.toDateString(); // For deduplication
 
-  // Check if current time matches any notification time
-  if (NOTIFICATION_TIMES.includes(currentTime)) {
-    // Get habits from IndexedDB or postMessage
-    getHabitsAndSendNotifications(currentDay);
-  }
-}
-
-// Get habits and send notifications
-async function getHabitsAndSendNotifications(currentDay) {
   try {
-    // Try to get habits from IndexedDB
+    // Get habits from IndexedDB
     const db = await openDB();
     const habits = await getHabitsFromDB(db);
     
-    if (habits && habits.length > 0) {
-      const activeHabits = habits.filter(habit => {
-        // Check if habit is scheduled for today
-        return habit.weekdays && habit.weekdays.includes(currentDay);
-      });
+    if (!habits || habits.length === 0) {
+      return;
+    }
 
-      if (activeHabits.length > 0) {
-        // Send notification for each active habit
-        for (const habit of activeHabits) {
-          await self.registration.showNotification('Rise Reminder', {
-            body: `Time for: ${habit.action}`,
-            icon: '/favicon.ico',
-            badge: '/favicon.ico',
-            tag: `habit-${habit.id}`,
-            requireInteraction: false,
-            vibrate: [200, 100, 200],
-          });
+    // Filter habits scheduled for today
+    const activeHabits = habits.filter(habit => {
+      return habit.weekdays && habit.weekdays.includes(currentDay);
+    });
+
+    if (activeHabits.length === 0) {
+      return;
+    }
+
+    // Check each habit's reminder times
+    for (const habit of activeHabits) {
+      if (!habit.reminderTimes || habit.reminderTimes.length === 0) {
+        continue;
+      }
+
+      // Check each reminder time for this habit
+      for (const reminderTime of habit.reminderTimes) {
+        // Check if current time matches this reminder time
+        if (reminderTime === currentTime) {
+          // Create unique key for deduplication
+          const notificationKey = `${habit.id}-${reminderTime}-${today}`;
+          const lastSent = lastNotificationSent.get(notificationKey);
+          const nowTimestamp = now.getTime();
+
+          // Only send if we haven't sent this notification in the last 2 minutes (to avoid duplicates)
+          if (!lastSent || (nowTimestamp - lastSent) > 120000) {
+            await self.registration.showNotification('Rise Reminder', {
+              body: `Time for: ${habit.action}`,
+              icon: '/favicon.ico',
+              badge: '/favicon.ico',
+              tag: `habit-${habit.id}-${reminderTime}`,
+              requireInteraction: false,
+              vibrate: [200, 100, 200],
+            });
+
+            // Track that we sent this notification
+            lastNotificationSent.set(notificationKey, nowTimestamp);
+
+            // Clean up old entries (older than 24 hours)
+            for (const [key, timestamp] of lastNotificationSent.entries()) {
+              if (nowTimestamp - timestamp > 86400000) {
+                lastNotificationSent.delete(key);
+              }
+            }
+          }
         }
       }
     }
   } catch (error) {
-    console.error('Error sending notifications:', error);
+    console.error('Error checking notification times:', error);
   }
 }
 
@@ -307,11 +316,30 @@ async function syncHabitsToDB(habits) {
   }
 }
 
-// Check every minute for notification times
-setInterval(checkNotificationTimes, 60000);
+// Check every 30 seconds for notification times (more reliable for catching exact times)
+setInterval(checkNotificationTimes, 30000);
 
 // Check immediately on activation
 checkNotificationTimes();
+
+// Also check on service worker activation
+self.addEventListener('activate', (event) => {
+  console.log('Service Worker activating...');
+  event.waitUntil(
+    Promise.all([
+      self.clients.claim(),
+      // Load and check Pomodoro timer on activation
+      loadPomodoroTimerFromDB().then((state) => {
+        if (state && !state.isPaused && state.timerEndTimestamp) {
+          // Start checking if timer is active
+          startPomodoroTimerCheck();
+        }
+      }),
+      // Check for habit notifications immediately
+      checkNotificationTimes()
+    ])
+  );
+});
 
 // Also check Pomodoro timer periodically (in case service worker was terminated)
 setInterval(() => {
